@@ -84,9 +84,27 @@ export const getDevicesByBrand = async (brandSlug: string) => {
   }));
 };
 
-export const searchDevices = async (query: string, brandSlug?: string, releaseYear?: number) => {
+export type SizeRange = 'compact' | 'standard' | 'large';
+
+const SIZE_RANGE_CONDITIONS: Record<SizeRange, { gte?: number; lt?: number }> = {
+  compact: { lt: 6 },
+  standard: { gte: 6, lt: 6.7 },
+  large: { gte: 6.7 },
+};
+
+export const searchDevices = async (
+  query: string,
+  brandSlug?: string,
+  releaseYear?: number,
+  sizeRange?: SizeRange,
+  minBattery?: number,
+  minRam?: number,
+  availableOnly?: boolean
+) => {
   const normalizedQuery = query.trim();
   const hasReleaseYear = typeof releaseYear === 'number' && Number.isFinite(releaseYear);
+  const hasMinBattery = typeof minBattery === 'number' && Number.isFinite(minBattery);
+  const hasMinRam = typeof minRam === 'number' && Number.isFinite(minRam);
 
   const devices = await prisma.device.findMany({
     where: {
@@ -104,6 +122,21 @@ export const searchDevices = async (query: string, brandSlug?: string, releaseYe
                 gte: new Date(Date.UTC(releaseYear, 0, 1)),
                 lt: new Date(Date.UTC(releaseYear + 1, 0, 1)),
               },
+            }
+          : {},
+        sizeRange
+          ? {
+              displaySizeInches: SIZE_RANGE_CONDITIONS[sizeRange],
+            }
+          : {},
+        hasMinBattery
+          ? {
+              batteryCapacityMah: { gte: minBattery },
+            }
+          : {},
+        availableOnly
+          ? {
+              isDiscontinued: false,
             }
           : {},
         normalizedQuery
@@ -128,10 +161,28 @@ export const searchDevices = async (query: string, brandSlug?: string, releaseYe
       { brand: { name: 'asc' } },
       { name: 'asc' },
     ],
-    take: 60,
+    // performanceRamOptions is a JSON-stringified array in a String column, not a
+    // native array/JSON column, so "at least X GB" can't be expressed as a typed
+    // Prisma filter. When a RAM filter is active, fetch every candidate matching
+    // the other (DB-level) filters with no cap - a fixed-size window here would
+    // sample a biased alphabetical slice (e.g. "AT&T"/"Acer"/"Alcatel" devices
+    // sort first and rarely have high RAM, undercounting real matches) - then do
+    // the RAM check in JS below and slice down to the normal page size.
+    take: hasMinRam ? undefined : 60,
   });
 
-  return devices.map((device) => ({
+  const filteredByRam = hasMinRam
+    ? devices.filter((device) => {
+        try {
+          const options = JSON.parse(device.performanceRamOptions || '[]') as number[];
+          return Array.isArray(options) && options.some((value) => value >= minRam);
+        } catch {
+          return false;
+        }
+      })
+    : devices;
+
+  return filteredByRam.slice(0, 60).map((device) => ({
     id: encodeDeviceId(device.brand.slug, device.slug),
     name: device.name,
     img: device.imageUrl || DEFAULT_IMAGE,

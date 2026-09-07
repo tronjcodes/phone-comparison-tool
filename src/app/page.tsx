@@ -72,12 +72,23 @@ export default function Home() {
   const [releaseYears, setReleaseYears] = useState<number[]>([]);
   const [selectedBrand, setSelectedBrand] = useState<string>('');
   const [selectedReleaseYear, setSelectedReleaseYear] = useState<string>('');
+  const [selectedSizeRange, setSelectedSizeRange] = useState<string>('');
+  const [selectedMinBattery, setSelectedMinBattery] = useState<string>('');
+  const [selectedMinRam, setSelectedMinRam] = useState<string>('');
+  const [availableOnly, setAvailableOnly] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [results, setResults] = useState<Device[]>([]);
   const [selectedDevices, setSelectedDevices] = useState<Device[]>([]);
   const [loadingBrands, setLoadingBrands] = useState(true);
   const [loadingResults, setLoadingResults] = useState(false);
-  const hasActiveSearch = searchTerm.trim().length > 0 || selectedBrand.length > 0 || selectedReleaseYear.length > 0;
+  const hasActiveSearch =
+    searchTerm.trim().length > 0 ||
+    selectedBrand.length > 0 ||
+    selectedReleaseYear.length > 0 ||
+    selectedSizeRange.length > 0 ||
+    selectedMinBattery.length > 0 ||
+    selectedMinRam.length > 0 ||
+    availableOnly;
   const searchSectionRef = useRef<HTMLElement | null>(null);
   const searchInputRef = useRef<HTMLInputElement | null>(null);
 
@@ -120,11 +131,28 @@ export default function Home() {
     }
 
     const timeout = setTimeout(() => {
-      void searchDevices(searchTerm, selectedBrand, selectedReleaseYear);
+      void searchDevices(
+        searchTerm,
+        selectedBrand,
+        selectedReleaseYear,
+        selectedSizeRange,
+        selectedMinBattery,
+        selectedMinRam,
+        availableOnly
+      );
     }, 200);
 
     return () => clearTimeout(timeout);
-  }, [searchTerm, selectedBrand, selectedReleaseYear, hasActiveSearch]);
+  }, [
+    searchTerm,
+    selectedBrand,
+    selectedReleaseYear,
+    selectedSizeRange,
+    selectedMinBattery,
+    selectedMinRam,
+    availableOnly,
+    hasActiveSearch,
+  ]);
 
   const fetchBrands = async () => {
     try {
@@ -141,13 +169,25 @@ export default function Home() {
     }
   };
 
-  const searchDevices = async (query: string, brand: string, releaseYear: string) => {
+  const searchDevices = async (
+    query: string,
+    brand: string,
+    releaseYear: string,
+    sizeRange: string,
+    minBattery: string,
+    minRam: string,
+    availableOnlyFilter: boolean
+  ) => {
     setLoadingResults(true);
     try {
       const params = new URLSearchParams();
       if (query.trim()) params.set('q', query.trim());
       if (brand) params.set('brand', brand);
       if (releaseYear) params.set('year', releaseYear);
+      if (sizeRange) params.set('size', sizeRange);
+      if (minBattery) params.set('minBattery', minBattery);
+      if (minRam) params.set('minRam', minRam);
+      if (availableOnlyFilter) params.set('availableOnly', 'true');
 
       const response = await fetch(`/api/phones/search?${params.toString()}`);
       const data = await response.json();
@@ -381,6 +421,45 @@ export default function Home() {
                 </option>
               ))}
             </select>
+          </label>
+
+          <label className="brand-select">
+            <span>Screen size</span>
+            <select value={selectedSizeRange} onChange={(event) => setSelectedSizeRange(event.target.value)}>
+              <option value="">Any size</option>
+              <option value="compact">Compact (under 6&quot;)</option>
+              <option value="standard">Standard (6&quot;&ndash;6.7&quot;)</option>
+              <option value="large">Large (6.7&quot;+)</option>
+            </select>
+          </label>
+
+          <label className="brand-select">
+            <span>Battery</span>
+            <select value={selectedMinBattery} onChange={(event) => setSelectedMinBattery(event.target.value)}>
+              <option value="">Any battery</option>
+              <option value="4000">4000mAh+</option>
+              <option value="5000">5000mAh+</option>
+              <option value="6000">6000mAh+</option>
+            </select>
+          </label>
+
+          <label className="brand-select">
+            <span>RAM</span>
+            <select value={selectedMinRam} onChange={(event) => setSelectedMinRam(event.target.value)}>
+              <option value="">Any RAM</option>
+              <option value="6">6GB+</option>
+              <option value="8">8GB+</option>
+              <option value="12">12GB+</option>
+            </select>
+          </label>
+
+          <label className="checkbox-filter">
+            <input
+              type="checkbox"
+              checked={availableOnly}
+              onChange={(event) => setAvailableOnly(event.target.checked)}
+            />
+            <span>Currently available only</span>
           </label>
         </div>
 
