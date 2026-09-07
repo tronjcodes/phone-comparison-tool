@@ -835,6 +835,14 @@ img {
   overflow: visible;
 }
 
+.finder-section {
+  margin-bottom: 1.25rem;
+}
+
+.finder-results-grid {
+  margin-top: 1.5rem;
+}
+
 .assistant-meta {
   margin: 0 0 0.7rem;
   color: var(--accent);

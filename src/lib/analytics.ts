@@ -21,3 +21,6 @@ export const trackPhoneSearch = (query: string, resultCount: number) =>
 export const trackPhoneSelected = (deviceId: string) => track('phone_selected', { deviceId });
 
 export const trackCompareStarted = (deviceCount: number) => track('compare_started', { deviceCount });
+
+export const trackPhoneRecommendationRequested = (description: string) =>
+  track('phone_recommendation_requested', { description });

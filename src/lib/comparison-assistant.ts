@@ -1,5 +1,6 @@
 import { getDeviceByEncodedId, getSpecsForDevice } from '@/lib/phone-catalog';
 import phoneNormalization from '@/lib/phone-normalization.js';
+import { ASSISTANT_PROVIDER, runProviderChain, type ProviderSource } from '@/lib/ai-providers';
 
 const { parseNumericArrayBlob } = phoneNormalization as {
   parseNumericArrayBlob: (value: string | null) => number[];
@@ -8,29 +9,12 @@ const { parseNumericArrayBlob } = phoneNormalization as {
 type DeviceRecord = Awaited<ReturnType<typeof getDeviceByEncodedId>>;
 type PresentDeviceRecord = NonNullable<DeviceRecord>;
 
-const OPENAI_DISABLED = (process.env.COMPARE_ASSISTANT_DISABLE_OPENAI || '').toLowerCase() === 'true';
-const OPENAI_API_KEY = OPENAI_DISABLED ? undefined : process.env.OPENAI_API_KEY;
-const OPENAI_BASE_URL = process.env.OPENAI_BASE_URL || 'https://api.openai.com/v1';
-const OPENAI_MODEL = process.env.OPENAI_MODEL || 'gpt-5-mini';
-const HUGGINGFACE_API_KEY = process.env.HUGGINGFACE_API_KEY || process.env.HF_TOKEN;
-const HUGGINGFACE_BASE_URL = process.env.HUGGINGFACE_BASE_URL || 'https://router.huggingface.co/v1';
-const HUGGINGFACE_MODEL = process.env.HUGGINGFACE_MODEL || 'Qwen/Qwen2.5-72B-Instruct:fastest';
-const OLLAMA_BASE_URL = process.env.OLLAMA_BASE_URL || 'http://127.0.0.1:11434';
-const OLLAMA_MODEL = process.env.OLLAMA_MODEL || 'qwen2.5:7b';
-const ASSISTANT_PROVIDER =
-  process.env.COMPARE_ASSISTANT_PROVIDER ||
-  (OPENAI_API_KEY ? 'openai' : HUGGINGFACE_API_KEY ? 'huggingface' : 'ollama');
-
-const PROVIDER_REQUEST_TIMEOUT_MS = 20_000;
-
 const RESPONSE_CACHE_TTL_MS = 5 * 60_000;
 const RESPONSE_CACHE_MAX_ENTRIES = 200;
 
-type AssistantSource = 'openai' | 'huggingface' | 'ollama' | 'fallback';
-
 type AssistantResponse = {
   answer: string;
-  source: AssistantSource;
+  source: ProviderSource;
   model: string;
   phones: ReturnType<typeof buildPhoneSummary>[];
 };
@@ -49,22 +33,6 @@ const setCached = (key: string, value: AssistantResponse) => {
   }
 
   responseCache.set(key, { value, expiresAt: Date.now() + RESPONSE_CACHE_TTL_MS });
-};
-
-const fetchWithTimeout = async (url: string, options: RequestInit, timeoutMs: number, label: string) => {
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), timeoutMs);
-
-  try {
-    return await fetch(url, { ...options, signal: controller.signal });
-  } catch (error) {
-    if (error instanceof Error && error.name === 'AbortError') {
-      throw new Error(`${label} request timed out after ${timeoutMs}ms`);
-    }
-    throw error;
-  } finally {
-    clearTimeout(timeout);
-  }
 };
 
 const formatNumber = (value: number | null | undefined, suffix?: string) => {
@@ -112,7 +80,7 @@ const getFirstSpec = (specs: Record<string, Record<string, string>>, paths: stri
   return null;
 };
 
-const buildPhoneSummary = (phone: PresentDeviceRecord) => {
+export const buildPhoneSummary = (phone: PresentDeviceRecord) => {
   const specs = getSpecsForDevice(phone.specBlob);
   const ramOptions = parseNumericArrayBlob(phone.performanceRamOptions);
   const storageOptions = parseNumericArrayBlob(phone.storageOptions);
@@ -221,251 +189,6 @@ const buildFallbackAnswer = (question: string, phones: ReturnType<typeof buildPh
   ].join('\n');
 };
 
-const getTextFromOpenAIResponse = (payload: unknown) => {
-  if (!payload || typeof payload !== 'object') {
-    return null;
-  }
-
-  const directOutput = (payload as { output_text?: unknown }).output_text;
-  if (typeof directOutput === 'string' && directOutput.trim()) {
-    return directOutput.trim();
-  }
-
-  const output = (payload as { output?: unknown }).output;
-  if (!Array.isArray(output)) {
-    return null;
-  }
-
-  const chunks: string[] = [];
-
-  for (const item of output) {
-    if (!item || typeof item !== 'object') {
-      continue;
-    }
-
-    const content = (item as { content?: unknown }).content;
-    if (!Array.isArray(content)) {
-      continue;
-    }
-
-    for (const part of content) {
-      if (!part || typeof part !== 'object') {
-        continue;
-      }
-
-      const text = (part as { text?: unknown }).text;
-      if (typeof text === 'string' && text.trim()) {
-        chunks.push(text.trim());
-      }
-    }
-  }
-
-  return chunks.length > 0 ? chunks.join('\n\n') : null;
-};
-
-const getTextFromChatCompletionResponse = (payload: unknown) => {
-  if (!payload || typeof payload !== 'object') {
-    return null;
-  }
-
-  const choices = (payload as { choices?: unknown }).choices;
-  if (!Array.isArray(choices)) {
-    return null;
-  }
-
-  const chunks: string[] = [];
-
-  for (const choice of choices) {
-    if (!choice || typeof choice !== 'object') {
-      continue;
-    }
-
-    const message = (choice as { message?: unknown }).message;
-    if (!message || typeof message !== 'object') {
-      continue;
-    }
-
-    const content = (message as { content?: unknown }).content;
-    if (typeof content === 'string' && content.trim()) {
-      chunks.push(content.trim());
-      continue;
-    }
-
-    if (Array.isArray(content)) {
-      for (const part of content) {
-        if (!part || typeof part !== 'object') {
-          continue;
-        }
-
-        const text = (part as { text?: unknown }).text;
-        if (typeof text === 'string' && text.trim()) {
-          chunks.push(text.trim());
-        }
-      }
-    }
-  }
-
-  return chunks.length > 0 ? chunks.join('\n\n') : null;
-};
-
-const askOpenAI = async (prompt: string) => {
-  if (!OPENAI_API_KEY) {
-    throw new Error('OPENAI_API_KEY is not set');
-  }
-
-  const response = await fetchWithTimeout(
-    `${OPENAI_BASE_URL}/responses`,
-    {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${OPENAI_API_KEY}`,
-      },
-      body: JSON.stringify({
-        model: OPENAI_MODEL,
-        input: prompt,
-        max_output_tokens: 1200,
-        text: {
-          format: {
-            type: 'text',
-          },
-        },
-      }),
-    },
-    PROVIDER_REQUEST_TIMEOUT_MS,
-    'OpenAI'
-  );
-
-  if (!response.ok) {
-    const details = await response.text();
-    throw new Error(`OpenAI request failed with status ${response.status}: ${details}`);
-  }
-
-  const payload = (await response.json()) as unknown;
-  const answer = getTextFromOpenAIResponse(payload);
-
-  if (!answer) {
-    throw new Error('OpenAI returned an empty response');
-  }
-
-  return {
-    answer,
-    source: 'openai' as const,
-    model: OPENAI_MODEL,
-  };
-};
-
-const askHuggingFace = async (prompt: string) => {
-  if (!HUGGINGFACE_API_KEY) {
-    throw new Error('HF_TOKEN or HUGGINGFACE_API_KEY is not set');
-  }
-
-  const response = await fetchWithTimeout(
-    `${HUGGINGFACE_BASE_URL}/chat/completions`,
-    {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${HUGGINGFACE_API_KEY}`,
-      },
-      body: JSON.stringify({
-        model: HUGGINGFACE_MODEL,
-        messages: [
-          {
-            role: 'user',
-            content: prompt,
-          },
-        ],
-        max_tokens: 1000,
-        temperature: 0.2,
-      }),
-    },
-    PROVIDER_REQUEST_TIMEOUT_MS,
-    'Hugging Face'
-  );
-
-  if (!response.ok) {
-    const details = await response.text();
-    throw new Error(`Hugging Face request failed with status ${response.status}: ${details}`);
-  }
-
-  const payload = (await response.json()) as unknown;
-  const answer = getTextFromChatCompletionResponse(payload);
-
-  if (!answer) {
-    throw new Error('Hugging Face returned an empty response');
-  }
-
-  return {
-    answer,
-    source: 'huggingface' as const,
-    model: HUGGINGFACE_MODEL,
-  };
-};
-
-const askOllama = async (prompt: string) => {
-  const response = await fetchWithTimeout(
-    `${OLLAMA_BASE_URL}/api/chat`,
-    {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        model: OLLAMA_MODEL,
-        stream: false,
-        messages: [
-          {
-            role: 'user',
-            content: prompt,
-          },
-        ],
-        options: {
-          num_predict: 1000,
-          temperature: 0.2,
-        },
-      }),
-    },
-    PROVIDER_REQUEST_TIMEOUT_MS,
-    'Ollama'
-  );
-
-  if (!response.ok) {
-    throw new Error(`Ollama request failed with status ${response.status}`);
-  }
-
-  const payload = (await response.json()) as {
-    message?: { content?: string };
-  };
-
-  const answer = payload.message?.content?.trim();
-  if (!answer) {
-    throw new Error('Ollama returned an empty response');
-  }
-
-  return {
-    answer,
-    source: 'ollama' as const,
-    model: OLLAMA_MODEL,
-  };
-};
-
-const getProviderOrder = (): AssistantSource[] => {
-  if (ASSISTANT_PROVIDER === 'openai') {
-    return ['openai', 'huggingface', 'ollama', 'fallback'];
-  }
-
-  if (ASSISTANT_PROVIDER === 'huggingface') {
-    return ['huggingface', 'ollama', 'openai', 'fallback'];
-  }
-
-  if (ASSISTANT_PROVIDER === 'ollama') {
-    return ['ollama', 'huggingface', 'openai', 'fallback'];
-  }
-
-  return ['openai', 'huggingface', 'ollama', 'fallback'];
-};
-
 export const buildComparisonAssistantContext = async (deviceIds: string[]) => {
   const devices = await Promise.all(deviceIds.map((deviceId) => getDeviceByEncodedId(deviceId)));
   const phones = devices
@@ -489,44 +212,23 @@ export const askComparisonAssistant = async (question: string, deviceIds: string
   }
 
   const prompt = buildComparisonPrompt(question, phones);
-  const providerErrors: string[] = [];
+  const result = await runProviderChain(prompt);
 
-  for (const provider of getProviderOrder()) {
-    if (provider === 'fallback') {
-      break;
-    }
+  if (result) {
+    const response: AssistantResponse = {
+      answer: result.answer,
+      source: result.source,
+      model: result.model,
+      phones,
+    };
 
-    try {
-      const result =
-        provider === 'openai'
-          ? await askOpenAI(prompt)
-          : provider === 'huggingface'
-            ? await askHuggingFace(prompt)
-            : await askOllama(prompt);
-
-      const response: AssistantResponse = {
-        answer: result.answer,
-        source: result.source,
-        model: result.model,
-        phones,
-      };
-
-      setCached(cacheKey, response);
-      return response;
-    } catch (error) {
-      const message = error instanceof Error ? error.message : `Unknown ${provider} error`;
-      console.warn(`[comparison-assistant] ${provider} provider failed: ${message}`);
-      providerErrors.push(`${provider}: ${message}`);
-    }
-  }
-
-  if (providerErrors.length > 0) {
-    console.error(`[comparison-assistant] All providers failed: ${providerErrors.join(' | ')}`);
+    setCached(cacheKey, response);
+    return response;
   }
 
   return {
     answer: buildFallbackAnswer(question, phones),
-    source: 'fallback' as const,
+    source: 'fallback',
     model: ASSISTANT_PROVIDER,
     phones,
   };

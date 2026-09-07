@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import type { SyntheticEvent } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
+import PhoneFinderChat from '@/components/PhoneFinderChat';
 import {
   trackSearchCtaClicked,
   trackSearchInputFocused,
@@ -377,6 +378,11 @@ export default function Home() {
           </button>
         </div>
       </section>
+
+      <PhoneFinderChat
+        onAddToComparison={addToComparison}
+        selectedDeviceIds={selectedDevices.map((device) => device.id)}
+      />
 
       <section className="search-panel" id="search-section" ref={searchSectionRef}>
         <div className="panel-header search-header">
