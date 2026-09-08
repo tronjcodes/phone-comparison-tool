@@ -13,6 +13,7 @@ export const ASSISTANT_PROVIDER =
   (OPENAI_API_KEY ? 'openai' : HUGGINGFACE_API_KEY ? 'huggingface' : 'ollama');
 
 const PROVIDER_REQUEST_TIMEOUT_MS = 20_000;
+const HUGGINGFACE_REQUEST_TIMEOUT_MS = 40_000;
 
 export type ProviderSource = 'openai' | 'huggingface' | 'ollama' | 'fallback';
 
@@ -197,7 +198,7 @@ const askHuggingFace = async (prompt: string): Promise<ProviderResult> => {
         temperature: 0.2,
       }),
     },
-    PROVIDER_REQUEST_TIMEOUT_MS,
+    HUGGINGFACE_REQUEST_TIMEOUT_MS,
     'Hugging Face'
   );
 
