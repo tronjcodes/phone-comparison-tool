@@ -7,7 +7,8 @@ import type { Brand, Device } from '@prisma/client';
 
 const { DEFAULT_IMAGE } = phoneNormalization as { DEFAULT_IMAGE: string };
 
-const MAX_AGE_YEARS = 10;
+const DEFAULT_MAX_AGE_YEARS = 5;
+const EXTENDED_MAX_AGE_YEARS = 10;
 const CANDIDATE_POOL_SIZE = 40;
 const PICKS_MIN = 3;
 const PICKS_MAX = 6;
@@ -29,7 +30,8 @@ export type RecommendationResponse = {
 
 const responseCache = new Map<string, { value: RecommendationResponse; expiresAt: number }>();
 
-const getCacheKey = (description: string) => description.trim().toLowerCase();
+const getCacheKey = (description: string, includeOlderPhones: boolean) =>
+  `${includeOlderPhones ? 'ext' : 'std'}::${description.trim().toLowerCase()}`;
 
 const setCached = (key: string, value: RecommendationResponse) => {
   if (responseCache.size >= RESPONSE_CACHE_MAX_ENTRIES) {
@@ -91,14 +93,14 @@ const extractSoftFilters = async (description: string): Promise<SoftFilters> => 
   return filters;
 };
 
-const buildWhereClause = (softFilters: SoftFilters) => {
-  const tenYearsAgo = new Date();
-  tenYearsAgo.setFullYear(tenYearsAgo.getFullYear() - MAX_AGE_YEARS);
+const buildWhereClause = (softFilters: SoftFilters, maxAgeYears: number) => {
+  const oldestAllowed = new Date();
+  oldestAllowed.setFullYear(oldestAllowed.getFullYear() - maxAgeYears);
 
   return {
     AND: [
       { isDiscontinued: false },
-      { releaseDate: { gte: tenYearsAgo } },
+      { releaseDate: { gte: oldestAllowed } },
       softFilters.sizeRange ? { displaySizeInches: SIZE_RANGE_CONDITIONS[softFilters.sizeRange] } : {},
       typeof softFilters.minBattery === 'number' ? { batteryCapacityMah: { gte: softFilters.minBattery } } : {},
       typeof softFilters.minCameraMp === 'number' ? { cameraMainMp: { gte: softFilters.minCameraMp } } : {},
@@ -112,12 +114,12 @@ const buildWhereClause = (softFilters: SoftFilters) => {
  * All filtering/fetching happens here in plain Prisma code - the LLM never
  * sees this function or the database, only the JSON it returns.
  */
-const getCandidatePool = async (softFilters: SoftFilters): Promise<DeviceWithBrand[]> => {
+const getCandidatePool = async (softFilters: SoftFilters, maxAgeYears: number): Promise<DeviceWithBrand[]> => {
   const hasMinRam = typeof softFilters.minRam === 'number';
 
   const fetchWith = (filters: SoftFilters) =>
     prisma.device.findMany({
-      where: buildWhereClause(filters),
+      where: buildWhereClause(filters, maxAgeYears),
       include: { brand: true },
       orderBy: { releaseDate: 'desc' },
       // Same RAM caveat as searchDevices in phone-catalog.ts: performanceRamOptions
@@ -155,11 +157,12 @@ const getCandidatePool = async (softFilters: SoftFilters): Promise<DeviceWithBra
   return candidates.slice(0, CANDIDATE_POOL_SIZE);
 };
 
-const buildRecommendationPrompt = (description: string, phones: PhoneSummary[]) => {
+const buildRecommendationPrompt = (description: string, phones: PhoneSummary[], maxAgeYears: number) => {
   const context = JSON.stringify({ phones }, null, 2);
 
   return [
     'You are a phone recommendation assistant.',
+    `The candidate list only includes non-discontinued phones released in the last ${maxAgeYears} years.`,
     'Only recommend phones from the candidate list below - never invent a phone, model, or spec that is not in the list.',
     'The candidate data does not include price at all. If the request mentions budget, price, or words like "cheap"/"affordable", do not speculate about whether any phone fits that budget or price tier - just briefly note that price data isn\'t available so you picked based on the other specs instead.',
     `Pick between ${PICKS_MIN} and ${PICKS_MAX} phones from the candidate list that best match the request.`,
@@ -206,7 +209,7 @@ const parseRecommendationPayload = (raw: string): { summary: string; picks: { id
   }
 };
 
-const buildDeterministicFallback = (pool: DeviceWithBrand[]): RecommendationResponse => {
+const buildDeterministicFallback = (pool: DeviceWithBrand[], maxAgeYears: number): RecommendationResponse => {
   const picks = pool.slice(0, PICKS_MAX).map((device) => ({
     ...buildPhoneSummary(device),
     reason: 'Matches your filters, sorted by most recent release.',
@@ -217,25 +220,29 @@ const buildDeterministicFallback = (pool: DeviceWithBrand[]): RecommendationResp
     summary:
       picks.length > 0
         ? "The AI assistant isn't available right now, so here are top matches based on your description."
-        : "No phones matched your description within the last 10 years of non-discontinued models. Try broadening it.",
+        : `No phones matched your description within the last ${maxAgeYears} years of non-discontinued models. Try broadening it.`,
     source: 'fallback',
     model: ASSISTANT_PROVIDER,
     picks,
   };
 };
 
-export const askPhoneRecommendation = async (description: string): Promise<RecommendationResponse> => {
-  const cacheKey = getCacheKey(description);
+export const askPhoneRecommendation = async (
+  description: string,
+  includeOlderPhones: boolean = false
+): Promise<RecommendationResponse> => {
+  const maxAgeYears = includeOlderPhones ? EXTENDED_MAX_AGE_YEARS : DEFAULT_MAX_AGE_YEARS;
+  const cacheKey = getCacheKey(description, includeOlderPhones);
   const cached = responseCache.get(cacheKey);
   if (cached && cached.expiresAt > Date.now()) {
     return cached.value;
   }
 
   const softFilters = await extractSoftFilters(description);
-  const pool = await getCandidatePool(softFilters);
+  const pool = await getCandidatePool(softFilters, maxAgeYears);
 
   if (pool.length === 0) {
-    const empty = buildDeterministicFallback(pool);
+    const empty = buildDeterministicFallback(pool, maxAgeYears);
     setCached(cacheKey, empty);
     return empty;
   }
@@ -244,7 +251,7 @@ export const askPhoneRecommendation = async (description: string): Promise<Recom
   const summaryById = new Map(summaries.map((summary) => [summary.id, summary]));
   const imageById = new Map(pool.map((device) => [`${device.brand.slug}::${device.slug}`, device.imageUrl || DEFAULT_IMAGE]));
 
-  const prompt = buildRecommendationPrompt(description, summaries);
+  const prompt = buildRecommendationPrompt(description, summaries, maxAgeYears);
   const result = await runProviderChain(prompt);
 
   if (result) {
@@ -274,7 +281,7 @@ export const askPhoneRecommendation = async (description: string): Promise<Recom
     }
   }
 
-  const fallback = buildDeterministicFallback(pool);
+  const fallback = buildDeterministicFallback(pool, maxAgeYears);
   setCached(cacheKey, fallback);
   return fallback;
 };

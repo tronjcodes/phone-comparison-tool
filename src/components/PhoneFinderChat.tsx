@@ -46,6 +46,7 @@ export default function PhoneFinderChat({
   selectedDeviceIds: string[];
 }) {
   const [description, setDescription] = useState('');
+  const [includeOlderPhones, setIncludeOlderPhones] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [summary, setSummary] = useState<string | null>(null);
@@ -74,7 +75,7 @@ export default function PhoneFinderChat({
       const response = await fetch('/api/recommend', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ description: text }),
+        body: JSON.stringify({ description: text, includeOlderPhones }),
       });
 
       const payload = await response.json();
@@ -111,8 +112,8 @@ export default function PhoneFinderChat({
 
       <p className="assistant-copy">
         Tell us what matters to you and we&rsquo;ll suggest real phones from the catalog &mdash; current
-        (non-discontinued) models from the last 10 years. We don&rsquo;t have price data, so budget can&rsquo;t
-        be factored in.
+        (non-discontinued) models from the last 5 years by default. We don&rsquo;t have price data, so budget
+        can&rsquo;t be factored in.
       </p>
 
       <div className="assistant-prompt-list">
@@ -139,6 +140,15 @@ export default function PhoneFinderChat({
           placeholder="A compact phone with a great camera and all-day battery life"
           rows={3}
         />
+      </label>
+
+      <label className="checkbox-filter">
+        <input
+          type="checkbox"
+          checked={includeOlderPhones}
+          onChange={(event) => setIncludeOlderPhones(event.target.checked)}
+        />
+        <span>Include phones older than 5 years (up to 10)</span>
       </label>
 
       <button

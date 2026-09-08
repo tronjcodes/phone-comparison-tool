@@ -24,8 +24,9 @@ export async function POST(request: Request) {
   }
 
   try {
-    const body = (await request.json()) as { description?: string };
+    const body = (await request.json()) as { description?: string; includeOlderPhones?: boolean };
     const description = typeof body.description === 'string' ? body.description.trim() : '';
+    const includeOlderPhones = body.includeOlderPhones === true;
 
     if (!description) {
       return NextResponse.json({ error: 'Describe the phone you\'re looking for.' }, { status: 400 });
@@ -38,7 +39,7 @@ export async function POST(request: Request) {
       );
     }
 
-    const result = await askPhoneRecommendation(description);
+    const result = await askPhoneRecommendation(description, includeOlderPhones);
 
     return NextResponse.json({
       summary: result.summary,
