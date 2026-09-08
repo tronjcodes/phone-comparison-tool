@@ -120,7 +120,7 @@ Open `http://localhost:3000`.
 
 - A tiny sample dataset (`data/imports/sample-phones.json`) so the app runs locally out of the box.
 - The importer (`scripts/import-phone-data.mjs`), which accepts general smartphone specification/reference data as flexible JSON (see the format in [Add Import Data](#4-add-import-data)) and upserts it into Postgres by brand/device slug.
-- Data-ingestion tooling for maintainers - `scripts/scrape-gsmarena.py`, `scripts/backfill.py`, and `scripts/export-gsmarena-db.py` - for scraping, targeted backfills, and importing from a local source database. These are internal tooling, not required to run or evaluate the app, so usage details are kept out of the public README; see the scripts themselves for their CLI options.
+- `scripts/import-phone-backfill.mjs`, a maintainer tool that imports only records missing from the catalog. This is internal tooling, not required to run or evaluate the app, so usage details are kept out of the public README; see the script itself for its CLI options.
 
 ### Migrating an Existing SQLite Dataset to Postgres
 
@@ -197,9 +197,7 @@ npm run db:studio           # Open Prisma Studio
 npm run db:export:catalog   # Dump an existing SQLite catalog to data/exports/catalog-dump.json
 npm run db:import:catalog   # Load that dump into whichever database DATABASE_URL points to
 npm run import:phones       # Import all JSON files in data/imports
-npm run import:phones:latest # Import gsmarena-latest-phones.json
-npm run backfill:phones     # Scrape and import models listed in data/backfill-models.txt
-npm run scrape:gsmarena:latest # Scrape latest curated GSMArena targets
+npm run import:phones:backfill # Import only records missing from the catalog (pass a JSON file)
 ```
 
 ## API Routes
@@ -215,15 +213,12 @@ npm run scrape:gsmarena:latest # Scrape latest curated GSMArena targets
 ```text
 data/imports/                     JSON import drop zone (gitignored, except sample-phones.json)
 data/exports/                     SQLite -> Postgres migration dumps (gitignored)
-data/backfill-models.txt          Model list for targeted backfills
 prisma/schema.prisma              Prisma data model (PostgreSQL)
 prisma/migrations/                Migration history (apply with `prisma migrate deploy`)
 scripts/export-sqlite-catalog.mjs Dumps an existing SQLite catalog to JSON
 scripts/import-catalog-dump.mjs   Loads that JSON dump into Postgres
 scripts/import-phone-data.mjs     CLI importer
 scripts/import-phone-backfill.mjs Imports only missing records
-scripts/backfill.py               Scrapes + imports targeted models
-scripts/scrape-gsmarena.py        GSMArena scraper
 src/app/                          Next.js app routes and UI
 src/lib/db.ts                     Prisma client singleton
 src/lib/phone-catalog.ts          Catalog queries

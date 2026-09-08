@@ -16,9 +16,7 @@
     "db:export:catalog": "node scripts/export-sqlite-catalog.mjs",
     "db:import:catalog": "node scripts/import-catalog-dump.mjs",
     "import:phones": "node scripts/import-phone-data.mjs",
-    "import:phones:latest": "node scripts/import-phone-data.mjs gsmarena-latest-phones.json",
-    "backfill:phones": "python3 scripts/backfill.py",
-    "scrape:gsmarena:latest": "python3 scripts/scrape-gsmarena.py --latest-only"
+    "import:phones:backfill": "node scripts/import-phone-backfill.mjs"
   },
   "dependencies": {
     "@prisma/client": "^6.16.0",
