@@ -111,7 +111,7 @@ export default function PhoneFinderChat({
   };
 
   return (
-    <section className="comparison-section assistant-section finder-section">
+    <section className="comparison-section assistant-section finder-section" id="phone-finder-section">
       <div className="comparison-section-header">
         <span className="eyebrow">AI Phone Finder</span>
         <h2>Describe the phone you want</h2>

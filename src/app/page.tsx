@@ -7,6 +7,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import PhoneFinderChat from '@/components/PhoneFinderChat';
 import {
   trackSearchCtaClicked,
+  trackFinderCtaClicked,
   trackSearchInputFocused,
   trackPhoneSearch,
   trackPhoneSelected,
@@ -264,6 +265,17 @@ export default function Home() {
     router.push(`/compare?devices=${ids}`);
   };
 
+  const handleFinderCtaClick = () => {
+    trackFinderCtaClicked();
+
+    const prefersReducedMotion =
+      typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    document.getElementById('phone-finder-section')?.scrollIntoView({
+      behavior: prefersReducedMotion ? 'auto' : 'smooth',
+      block: 'start',
+    });
+  };
+
   const handleSearchCtaClick = () => {
     trackSearchCtaClicked();
     // Focus first (synchronously, within the click handler) so iOS Safari still
@@ -295,9 +307,14 @@ export default function Home() {
           <p>
             Compare specs side by side and see which phone comes out ahead.
           </p>
-          <button type="button" className="primary-button search-cta" onClick={handleSearchCtaClick}>
-            Search phones <span aria-hidden="true">&darr;</span>
-          </button>
+          <div className="hero-cta-row">
+            <button type="button" className="primary-button search-cta" onClick={handleFinderCtaClick}>
+              Describe what you want <span aria-hidden="true">&darr;</span>
+            </button>
+            <button type="button" className="primary-button search-cta" onClick={handleSearchCtaClick}>
+              Search phones <span aria-hidden="true">&darr;</span>
+            </button>
+          </div>
           <div className="hero-stats">
             <div>
               <strong>{brands.length}</strong>

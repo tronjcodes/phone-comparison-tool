@@ -13,6 +13,8 @@ export const trackPhoneAiRequest = (deviceId: string) => track('phone_ai_request
 
 export const trackSearchCtaClicked = () => track('search_cta_clicked');
 
+export const trackFinderCtaClicked = () => track('finder_cta_clicked');
+
 export const trackSearchInputFocused = () => track('search_input_focused');
 
 export const trackPhoneSearch = (query: string, resultCount: number) =>
