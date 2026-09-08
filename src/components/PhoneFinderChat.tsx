@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import type { SyntheticEvent } from 'react';
+import type { KeyboardEvent, SyntheticEvent } from 'react';
 import Link from 'next/link';
 import { trackPhoneRecommendationRequested } from '@/lib/analytics';
 
@@ -57,6 +57,13 @@ export default function PhoneFinderChat({
     const image = event.currentTarget;
     if (!image.src.endsWith(PHONE_IMAGE_FALLBACK)) {
       image.src = PHONE_IMAGE_FALLBACK;
+    }
+  };
+
+  const handleDescriptionKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
+    if (event.key === 'Enter' && !event.shiftKey) {
+      event.preventDefault();
+      void ask();
     }
   };
 
@@ -137,6 +144,7 @@ export default function PhoneFinderChat({
         <textarea
           value={description}
           onChange={(event) => setDescription(event.target.value)}
+          onKeyDown={handleDescriptionKeyDown}
           placeholder="A compact phone with a great camera and all-day battery life"
           rows={3}
         />

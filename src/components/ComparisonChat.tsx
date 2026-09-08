@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import type { KeyboardEvent } from 'react';
 import { trackPhoneAiRequest } from '@/lib/analytics';
 
 const DEFAULT_STARTER_PROMPTS = [
@@ -33,6 +34,13 @@ export default function ComparisonChat({
   const [assistantMeta, setAssistantMeta] = useState<string | null>(null);
   const [assistantLoading, setAssistantLoading] = useState(false);
   const [assistantError, setAssistantError] = useState<string | null>(null);
+
+  const handlePromptKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
+    if (event.key === 'Enter' && !event.shiftKey) {
+      event.preventDefault();
+      void askAssistant();
+    }
+  };
 
   const askAssistant = async (promptOverride?: string) => {
     const prompt = (promptOverride ?? assistantPrompt).trim();
@@ -113,6 +121,7 @@ export default function ComparisonChat({
         <textarea
           value={assistantPrompt}
           onChange={(event) => setAssistantPrompt(event.target.value)}
+          onKeyDown={handlePromptKeyDown}
           placeholder={placeholder}
           rows={4}
         />
