@@ -108,9 +108,9 @@ export const buildDeviceDetail = (phone: DeviceWithBrand): DeviceDetail => {
     }
 
     const matches = dedupe(
-      [...rawRam.matchAll(/(\d+(?:\.\d+)?)\s*GB(?:\s*RAM)?\b/gi)].map((match) => `${match[1]}GB RAM`)
+      [...rawRam.matchAll(/(\d+(?:\.\d+)?)\s*GB\s*RAM\b/gi)].map((match) => `${match[1]}GB RAM`)
     );
-    return matches.length > 0 ? matches.join(', ') : rawRam;
+    return matches.length > 0 ? matches.join(', ') : 'N/A';
   };
 
   const extractStorageFromInternal = () => {
