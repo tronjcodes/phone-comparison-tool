@@ -418,7 +418,7 @@ export default function Home() {
               value={searchTerm}
               onChange={(event) => setSearchTerm(event.target.value)}
               onFocus={() => trackSearchInputFocused()}
-              placeholder="Try iPhone 17, Pixel 11, Galaxy Z Fold8, BlackBerry..."
+              placeholder="Try iPhone Duo, Pixel 11, Galaxy Z Fold8, BlackBerry..."
             />
           </label>
 
